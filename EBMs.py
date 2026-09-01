@@ -4,8 +4,11 @@ import torch.optim as optim
 from torch.utils.data import DataLoader
 from torchvision import datasets, transforms, utils
 import numpy as np
+import argparse, os
+import math
 class EBMs(nn.Module):
-    def init(self,input_dims = 784,hidden_dims = 1):
+    def __init__(self,input_dims = 784,hidden_dims = 1):
+        super().__init__()
         self.net = nn.Sequential(
             nn.Linear(in_features=input_dims,
                     out_features=hidden_dims),
@@ -24,7 +27,7 @@ class EBMs(nn.Module):
 
 class ReplayBuffer():
     def __init__(self,input_size = 784,max_size = 512):
-        self.size = np.sqrt(input_size,dtype = int)
+        self.size = math.isqrt(input_size)
         self.buffer = []
         self.max_size = 512
     def sample(self,batch_size,device):
@@ -34,10 +37,10 @@ class ReplayBuffer():
         else:
             return torch.rand((batch_size, 1, self.size, self.size), device=device) * 2.0 - 1.0
     def add(self,x):
-        if(len(self.buffer) < 512):
+        if(len(self.buffer) < self.max_size):
             self.buffer.append(x)
         else:
-            self.buffer[torch.randint(0, self.max_size, (1,)).item()] = x
+            self.buffer[torch.randint(0,self.max_size - 1,1).item()] = x
 
 def sample_sgld(model,x_init, num_steps=60, step_size=10.0, noise_std=0.005,alpha = 0.5):
     model.eval()
@@ -61,6 +64,7 @@ def get_dataloader(batch_size=128):
     return DataLoader(dataset, batch_size=batch_size, shuffle=True, drop_last=True)
 
 def train(model,cfg):
+    model.train()
     model.to(cfg['device'])
     Buffer = ReplayBuffer()
     optimizer = optim.AdamW(model.parameters(),lr = cfg['lr'])
@@ -72,6 +76,7 @@ def train(model,cfg):
 
             x_init = Buffer.sample(batch_size,cfg['device'])
             x_fake = sample_sgld(model,x_init)
+            Buffer.add(x_fake)
 
             E_real = model(x_real)
             E_fake = model(x_fake)
@@ -83,10 +88,27 @@ def train(model,cfg):
             loss.backward()
             torch.nn.utils.clip_grad_norm_(model.parameters(), max_norm=1.0)
             optimizer.step()
+            
 
         
         utils.save_image(
         x_fake[:64] * 0.5 + 0.5, 
         f"./samples/epoch_{epoch+1}.png", 
         nrow=8)
-        print(f"--> Đã lưu ảnh sinh ra vào ./samples/epoch_{epoch+1}.png") 
+        print(f"--> Đã lưu ảnh sinh ra vào ./samples/epoch_{epoch+1}.png")
+DEFAULT_LR = 1e-4
+DEFAULT_EPOCHS = 20
+if __name__ == "__main__":
+    DEVICE = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+    parser = argparse.ArgumentParser()
+    parser.add_argument("--lr",
+                        default=DEFAULT_LR)
+    parser.add_argument("--epochs",
+                        default=DEFAULT_EPOCHS,
+                        type=int)
+    parser.add_argument("--device",default=DEVICE)
+    args = parser.parse_args()
+    cfg = vars(args).copy()
+    cfg["device"] = torch.device(cfg["device"])
+    model = EBMs()
+    train(model,cfg)
