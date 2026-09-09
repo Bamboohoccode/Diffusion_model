@@ -10,7 +10,7 @@ class EBMs(nn.Module):
     def __init__(self,input_dims = 784,hidden_dims = 256):
         super().__init__()
         self.net = nn.Sequential(
-            nn.Flatten()
+            nn.Flatten(),
             nn.Linear(in_features=input_dims,
                     out_features=hidden_dims),
             nn.SiLU(),
@@ -30,11 +30,11 @@ class ReplayBuffer():
     def __init__(self,input_size = 784,max_size = 512):
         self.size = math.isqrt(input_size)
         self.buffer = []
-        self.max_size = 512
+        self.max_size = max_size
     def sample(self,batch_size,device):
         if(len(self.buffer) > batch_size and torch.rand(1).item() > 0.05):
             indices = torch.randint(0, len(self.buffer), (batch_size,))
-            return torch.stack([self.buffer[i] for i in indices])
+            return torch.stack([self.buffer[i] for i in indices]).to(device)
         else:
             return torch.rand((batch_size, 1, self.size, self.size), device=device) * 2.0 - 1.0
     def add(self,x):
@@ -55,7 +55,7 @@ def sample_sgld(model,x_init, num_steps=60,alpha = 0.5):
         grad = torch.autograd.grad(model(x).sum(),x,create_graph=False)[0]
         noise = torch.randn_like(x)
         # using x.data for not tracking grad every different x.
-        x.data = x.data - alpha * grad + torch.sqrt(2 * alpha) * noise
+        x.data = x.data - alpha * grad + math.sqrt(2 * alpha) * noise
         x.data.clamp_(-1.0, 1.0)
     model.train()
     return x.detach()
